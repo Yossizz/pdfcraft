@@ -209,6 +209,17 @@ usage = "Arabic UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
 sha256 = "889a0d0a9ea53ca0a818c2ba672c053c232d2cca140f8d63127353e6f36505fe"
 
 [[asset]]
+path = "crates/ui-egui/src/i18n/he.tsv"
+title = "Hebrew interface translation catalog"
+author = "PdfCraft contributors"
+source = "Contributor-original: clean-room translations of PdfCraft's English UI labels, no proprietary localisation resources"
+licence = "MIT OR Apache-2.0"
+licence_file = "LICENSE-MIT"
+kind = "translation"
+usage = "Hebrew UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs"
+sha256 = "70eddc8cae7b413559047b6ccfa46484357ec765741c8fb6a8d5ad6b7a3b78cd"
+
+[[asset]]
 path = "crates/ui-egui/src/i18n/tr.tsv"
 title = "Turkish interface translation catalog"
 author = "PdfCraft contributors"
