@@ -345,6 +345,20 @@ pub fn lang_from_tag(tag: &str) -> Option<Lang> {
     cands.iter().find_map(|c| Lang::from_code(c))
 }
 
+/// The registered language for a system locale tag, as Auto would pick it: [`lang_from_tag`],
+/// except a language this build can't draw.
+fn auto_lang_from_tag(tag: &str) -> Option<Lang> {
+    lang_from_tag(tag).filter(|lang| auto_can_draw(*lang))
+}
+
+/// Whether Auto may pick `lang`. Hebrew labels need the craft-fonts `Hebr` face: the installed
+/// fallback face is chosen for Arabic (SF Arabic on macOS has no Hebrew), so without that face a
+/// Hebrew system would get an interface of replacement boxes. Auto then goes on to the next
+/// preferred language, or English; choosing Hebrew in Preferences still works.
+fn auto_can_draw(lang: Lang) -> bool {
+    lang.code() != "he" || !pdfcraft_fonts::ui_hebrew_fonts().is_empty()
+}
+
 /// The system language (cached). English when it can't be determined.
 pub fn system_lang() -> Lang {
     // Tests drive the UI by its English labels whatever the developer's locale is. This covers
@@ -388,7 +402,7 @@ fn language_override(tag: &str) -> Option<Lang> {
     if cfg!(target_os = "windows") && matches!(candidates(tag).first().map(String::as_str), Some("c" | "posix")) {
         return None;
     }
-    lang_from_tag(tag)
+    auto_lang_from_tag(tag)
 }
 
 /// The Windows display languages in preference order, one tag per line, queried once when Auto
@@ -403,7 +417,7 @@ fn windows_ui_language() -> Option<String> {
 /// The first supported language in a macOS `defaults read` list or Windows UI-culture output.
 #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
 fn first_supported(list: &str) -> Option<Lang> {
-    list.split(['(', ')', ',', '"', '\n']).map(str::trim).filter(|s| !s.is_empty()).find_map(lang_from_tag)
+    list.split(['(', ')', ',', '"', '\n']).map(str::trim).filter(|s| !s.is_empty()).find_map(auto_lang_from_tag)
 }
 
 /// The first supported language among BCP 47 tags in preference order, as the browser lists them
@@ -411,7 +425,7 @@ fn first_supported(list: &str) -> Option<Lang> {
 /// practice, and a page can't make Auto walk an unbounded one.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 fn first_supported_tag<S: AsRef<str>>(tags: impl IntoIterator<Item = S>) -> Option<Lang> {
-    tags.into_iter().take(32).find_map(|tag| lang_from_tag(tag.as_ref().trim()))
+    tags.into_iter().take(32).find_map(|tag| auto_lang_from_tag(tag.as_ref().trim()))
 }
 
 /// The browser's preferred languages, as the desktop builds use the system's: `navigator.languages`
@@ -3394,7 +3408,6 @@ mod tests {
         for tag in ["he", "he-IL", "he_IL.UTF-8", "HE-il", "iw", "iw_IL", "iw-IL.UTF-8"] {
             assert_eq!(lang_from_tag(tag), Some(he), "{tag}");
         }
-        assert_eq!(first_supported("iw-IL\r\nen-US"), Some(he));
         assert_eq!(tr(he, "File"), "קובץ");
         // Unknown strings and user text are never reordered by a lookup.
         assert_eq!(tr(he, "דוח סופי {n}.pdf"), "דוח סופי {n}.pdf");
@@ -3404,6 +3417,22 @@ mod tests {
         let mut restored = crate::PdfCraftApp::default();
         restored.restore(&app.persist());
         assert_eq!(restored.language, "he");
+    }
+
+    /// Auto picks Hebrew only in a build that can draw it (a craft-fonts `Hebr` face); otherwise it
+    /// goes on to the next preferred language. An explicit choice always gets Hebrew.
+    #[test]
+    fn auto_picks_hebrew_only_with_a_hebrew_face() {
+        let he = hebrew();
+        let face = !pdfcraft_fonts::ui_hebrew_fonts().is_empty();
+        assert_eq!(auto_can_draw(he), face);
+        assert!(Lang::all().filter(|l| *l != he).all(auto_can_draw), "only Hebrew depends on the build");
+        assert_eq!(lang_from_tag("he-IL"), Some(he), "a tag still names Hebrew");
+        assert_eq!(first_supported("iw-IL\r\nen-US"), Some(if face { he } else { Lang::EN }));
+        assert_eq!(first_supported("(\n    \"he-IL\",\n    \"fr-FR\"\n)\n"), if face { Some(he) } else { Lang::from_code("fr") });
+        assert_eq!(first_supported_tag(["he", "de-DE"]), if face { Some(he) } else { Lang::from_code("de") });
+        assert_eq!(language_override("he_IL.UTF-8"), face.then_some(he));
+        assert_eq!(Lang::from_pref("he"), he, "choosing Hebrew in Preferences always works");
     }
 
     /// he.tsv is written in logical order, as Hebrew is typed; lookups return display order.
