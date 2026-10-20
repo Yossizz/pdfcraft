@@ -281,6 +281,28 @@ pub fn installed_font_definitions(cjk: CjkPreference) -> FontDefinitions {
     fonts
 }
 
+/// Whether the interface faces outside a Chinese interface ([`installed_font_definitions`]: the
+/// embedded faces, craft-fonts and the installed fallbacks) draw every character of `text` other
+/// than white space, in the proportional family.
+pub fn interface_draws(text: &str) -> bool {
+    draws(&installed_font_definitions(CjkPreference::Default), text)
+}
+
+/// Whether some face of `fonts`' proportional family maps each character of `text` other than
+/// white space. A face that doesn't parse draws nothing.
+pub fn draws(fonts: &FontDefinitions, text: &str) -> bool {
+    use skrifa::MetadataProvider as _;
+    let faces: Vec<skrifa::FontRef<'_>> = fonts
+        .families
+        .get(&egui::FontFamily::Proportional)
+        .into_iter()
+        .flatten()
+        .filter_map(|name| fonts.font_data.get(name))
+        .filter_map(|data| skrifa::FontRef::from_index(&data.font, data.index).ok())
+        .collect();
+    text.chars().filter(|c| !c.is_whitespace()).all(|c| faces.iter().any(|face| face.charmap().map(c).is_some()))
+}
+
 /// The interface fonts: Inter (and JetBrains Mono for code) first, then egui's defaults, then
 /// the CJK, Arabic, Telugu, Hebrew and Thai faces of the optional craft-fonts build input as the
 /// last fallback in every family. Without craft-fonts there is no Japanese, Chinese, Arabic,
@@ -494,6 +516,39 @@ mod tests {
     const HINTING_CORPUS: [&str; 4] = ["Il1MWmw", "Hamburgefonts", "0123456789 .,;:!?()[]{}+-=/\\", "Café Ångström déjà-vu Ωμέγα Ελληνικά Журнал"];
     const HINTING_SIZES: [f32; 6] = [10.0, 11.0, 12.0, 13.0, 14.0, 16.0];
     const HINTING_PPPS: [f32; 4] = [1.0, 1.25, 1.5, 2.0];
+
+    /// `draws` asks the faces of the proportional family, so an installed Hebrew face counts once
+    /// it is in the family, and the embedded faces alone draw Hebrew only with craft-fonts `Hebr`.
+    #[test]
+    fn draws_counts_every_face_of_the_family() {
+        let embedded = font_definitions();
+        assert!(draws(&embedded, "Save as… Ωμέγα Журнал"));
+        assert!(!draws(&embedded, "\u{0378}"), "nothing draws an unassigned code point");
+        assert!(draws(&embedded, " \n"), "white space needs no glyph");
+        assert_eq!(draws(&embedded, "קובץ"), !pdfcraft_fonts::ui_hebrew_fonts().is_empty());
+        let installed = [
+            "/System/Library/Fonts/SFHebrew.ttf",
+            "/System/Library/Fonts/ArialHB.ttc",
+            "C:\\Windows\\Fonts\\segoeui.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansHebrew-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ];
+        let face = installed.iter().filter_map(|path| std::fs::read(path).ok()).find_map(|bytes| {
+            use skrifa::MetadataProvider as _;
+            let index = (0..4).find(|&i| skrifa::FontRef::from_index(&bytes, i).is_ok_and(|f| f.charmap().map('א').is_some()))?;
+            let mut data = egui::FontData::from_owned(bytes);
+            data.index = index;
+            Some(data)
+        });
+        let Some(face) = face else {
+            eprintln!("skipping the installed-face case: no known Hebrew face is installed");
+            return;
+        };
+        let mut with_hebrew = embedded;
+        with_hebrew.font_data.insert("installed-hebrew".to_owned(), std::sync::Arc::new(face));
+        with_hebrew.families.entry(FontFamily::Proportional).or_default().push("installed-hebrew".to_owned());
+        assert!(draws(&with_hebrew, "אבגדהוזחטיךכלםמןנסעףפץצקרשת"));
+    }
 
     fn primary_families() -> [(FontFamily, &'static str); 4] {
         [

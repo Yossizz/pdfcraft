@@ -2448,3 +2448,4 @@ animation effects	Off	Desativados
 	Make properties default	Tornar propriedades padrão
 	Pages selected	Páginas selecionadas
 	Page properties	Propriedades da página
+	The signature font can't draw “{c}” ({code}). Type it in Latin, Cyrillic or Greek letters, or use Draw or Image.	A fonte da assinatura não pode exibir “{c}” ({code}). Digite com letras latinas, cirílicas ou gregas, ou use “Desenhar” ou “Imagem”.

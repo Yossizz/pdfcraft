@@ -351,12 +351,18 @@ fn auto_lang_from_tag(tag: &str) -> Option<Lang> {
     lang_from_tag(tag).filter(|lang| auto_can_draw(*lang))
 }
 
-/// Whether Auto may pick `lang`. Hebrew labels need the craft-fonts `Hebr` face: the installed
-/// fallback face is chosen for Arabic (SF Arabic on macOS has no Hebrew), so without that face a
-/// Hebrew system would get an interface of replacement boxes. Auto then goes on to the next
-/// preferred language, or English; choosing Hebrew in Preferences still works.
+/// The Hebrew letters, final forms included, that the interface fonts must have for Auto to pick
+/// Hebrew.
+const HEBREW_LETTERS: &str = "אבגדהוזחטיךכלםמןנסעףפץצקרשת";
+
+/// Whether Auto may pick `lang`. No embedded face has Hebrew unless craft-fonts has a `Hebr` face,
+/// and the general installed fallback is chosen for Arabic (SF Arabic on macOS has no Hebrew), so
+/// Hebrew is picked only where the interface faces actually draw it (an installed face such as
+/// Segoe UI on Windows, or a Hebrew fallback face). Elsewhere a Hebrew system would get an
+/// interface of replacement boxes, so Auto goes on to the next preferred language, or English.
 fn auto_can_draw(lang: Lang) -> bool {
-    lang.code() != "he" || !pdfcraft_fonts::ui_hebrew_fonts().is_empty()
+    static HEBREW: OnceLock<bool> = OnceLock::new();
+    lang.code() != "he" || *HEBREW.get_or_init(|| crate::theme::interface_draws(HEBREW_LETTERS))
 }
 
 /// The system language (cached). English when it can't be determined.
@@ -3419,20 +3425,21 @@ mod tests {
         assert_eq!(restored.language, "he");
     }
 
-    /// Auto picks Hebrew only in a build that can draw it (a craft-fonts `Hebr` face); otherwise it
-    /// goes on to the next preferred language. An explicit choice always gets Hebrew.
+    /// Auto picks Hebrew only where the interface faces draw it; otherwise it goes on to the next
+    /// preferred language. An explicit choice still selects Hebrew.
     #[test]
-    fn auto_picks_hebrew_only_with_a_hebrew_face() {
+    fn auto_picks_hebrew_only_where_the_interface_draws_it() {
         let he = hebrew();
-        let face = !pdfcraft_fonts::ui_hebrew_fonts().is_empty();
+        let face = crate::theme::interface_draws(HEBREW_LETTERS);
         assert_eq!(auto_can_draw(he), face);
+        assert!(face || pdfcraft_fonts::ui_hebrew_fonts().is_empty(), "a craft-fonts Hebrew face draws Hebrew");
         assert!(Lang::all().filter(|l| *l != he).all(auto_can_draw), "only Hebrew depends on the build");
         assert_eq!(lang_from_tag("he-IL"), Some(he), "a tag still names Hebrew");
         assert_eq!(first_supported("iw-IL\r\nen-US"), Some(if face { he } else { Lang::EN }));
         assert_eq!(first_supported("(\n    \"he-IL\",\n    \"fr-FR\"\n)\n"), if face { Some(he) } else { Lang::from_code("fr") });
         assert_eq!(first_supported_tag(["he", "de-DE"]), if face { Some(he) } else { Lang::from_code("de") });
         assert_eq!(language_override("he_IL.UTF-8"), face.then_some(he));
-        assert_eq!(Lang::from_pref("he"), he, "choosing Hebrew in Preferences always works");
+        assert_eq!(Lang::from_pref("he"), he, "choosing Hebrew in Preferences selects it whatever the fonts");
     }
 
     /// he.tsv is written in logical order, as Hebrew is typed; lookups return display order.

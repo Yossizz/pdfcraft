@@ -2432,3 +2432,4 @@ animation effects	Off	Өшірулі
 	Make properties default	Қасиеттерді әдепкі ету
 	Pages selected	Таңдалған беттер
 	Page properties	Бет қасиеттері
+	The signature font can't draw “{c}” ({code}). Type it in Latin, Cyrillic or Greek letters, or use Draw or Image.	Қолтаңба қарпі «{c}» таңбасын ({code}) сала алмайды. Оны латын, кирилл немесе грек әріптерімен жазыңыз немесе «Салу» не «Кескін» қойындысын пайдаланыңыз.

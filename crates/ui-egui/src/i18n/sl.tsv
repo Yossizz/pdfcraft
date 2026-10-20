@@ -2439,3 +2439,4 @@ animation effects	Off	Izklopljeni
 	Make properties default	Nastavi lastnosti kot privzete
 	Pages selected	Izbrane strani
 	Page properties	Lastnosti strani
+	The signature font can't draw “{c}” ({code}). Type it in Latin, Cyrillic or Greek letters, or use Draw or Image.	Pisava podpisa ne more izrisati znaka „{c}“ ({code}). Vnesite ga z latiničnimi, ciriličnimi ali grškimi črkami ali uporabite „Riši“ ali „Slika“.

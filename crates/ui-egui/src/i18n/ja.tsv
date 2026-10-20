@@ -2434,3 +2434,4 @@ animation effects	Off	オフ
 	Make properties default	プロパティをデフォルトに設定
 	Pages selected	選択したページ
 	Page properties	ページのプロパティ
+	The signature font can't draw “{c}” ({code}). Type it in Latin, Cyrillic or Greek letters, or use Draw or Image.	署名用フォントでは「{c}」（{code}）を表示できません。ラテン文字、キリル文字、ギリシャ文字で入力するか、「描画」または「画像」を使用してください。

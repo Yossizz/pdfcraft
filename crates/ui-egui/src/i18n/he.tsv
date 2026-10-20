@@ -498,3 +498,4 @@ key	Space	רווח
 	Animation effects	אפקטי הנפשה
 animation effects	On	מופעלים
 animation effects	Off	כבויים
+	The signature font can't draw “{c}” ({code}). Type it in Latin, Cyrillic or Greek letters, or use Draw or Image.	גופן החתימה לא יכול לצייר את "{c}" ({code}). הקלידו את השם באותיות לטיניות, קיריליות או יווניות, או השתמשו ב"ציור" או ב"תמונה".

@@ -2430,3 +2430,4 @@ animation effects	Off	Kapalı
 	Make properties default	Özellikleri varsayılan yap
 	Pages selected	Seçilen sayfalar
 	Page properties	Sayfa özellikleri
+	The signature font can't draw “{c}” ({code}). Type it in Latin, Cyrillic or Greek letters, or use Draw or Image.	İmza yazı tipi “{c}” ({code}) karakterini çizemez. Latin, Kiril veya Yunan harfleriyle yazın ya da “Çiz” veya “Resim” seçeneğini kullanın.

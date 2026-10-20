@@ -2397,3 +2397,4 @@ animation effects	Off	Изключени
 	Make properties default	Задаване като свойства по подразбиране
 	Pages selected	Избрани страници
 	Page properties	Свойства на страницата
+	The signature font can't draw “{c}” ({code}). Type it in Latin, Cyrillic or Greek letters, or use Draw or Image.	Шрифтът на подписа не може да изобрази „{c}“ ({code}). Напишете го с латински, кирилски или гръцки букви или използвайте „Рисуване“ или „Изображение“.

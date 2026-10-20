@@ -2343,3 +2343,4 @@ animation effects	Off	ఆఫ్
 	Make properties default	లక్షణాలను డిఫాల్ట్‌గా చేయి
 	Pages selected	ఎంచుకున్న పేజీలు
 	Page properties	పేజీ లక్షణాలు
+	The signature font can't draw “{c}” ({code}). Type it in Latin, Cyrillic or Greek letters, or use Draw or Image.	సంతకం ఫాంట్ “{c}” ({code})ని చూపలేదు. దాన్ని లాటిన్, సిరిలిక్ లేదా గ్రీకు అక్షరాలలో టైప్ చేయండి, లేదా “గీయి” లేదా “చిత్రం” ఉపయోగించండి.

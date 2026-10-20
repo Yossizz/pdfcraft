@@ -2440,3 +2440,4 @@ animation effects	Off	Ανενεργά
 	Make properties default	Ορισμός ιδιοτήτων ως προεπιλογή
 	Pages selected	Επιλεγμένες σελίδες
 	Page properties	Ιδιότητες σελίδας
+	The signature font can't draw “{c}” ({code}). Type it in Latin, Cyrillic or Greek letters, or use Draw or Image.	Η γραμματοσειρά της υπογραφής δεν μπορεί να εμφανίσει τον χαρακτήρα «{c}» ({code}). Πληκτρολογήστε τον με λατινικά, κυριλλικά ή ελληνικά γράμματα ή χρησιμοποιήστε «Σχεδίαση» ή «Εικόνα».
