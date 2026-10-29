@@ -2444,6 +2444,67 @@ fn detection_finds_blanks_rules_boxes_and_names_them() {
     assert!(again.is_empty(), "{again:?}");
 }
 
+/// A Hebrew form reads from the right: each blank takes the label on its right, not the next
+/// field's label on its left; a check box takes the label on its left; a signature line takes
+/// the caption under it; fields are numbered right to left.
+#[test]
+fn detection_names_right_to_left_forms_from_their_own_labels() {
+    use crate::detect::*;
+    let w = |t: &str, x0: f64, y0: f64, x1: f64| Word { text: t.into(), rect: [x0, y0, x1, y0 + 12.0] };
+    // Words in the order they are read (right to left within each line).
+    let words = vec![
+        w("שם", 430.0, 700.0, 450.0),
+        w("מלא:", 400.0, 700.0, 426.0),
+        w("____________", 200.0, 700.0, 390.0),
+        w("טלפון:", 160.0, 700.0, 195.0),
+        w("________", 60.0, 700.0, 155.0),
+        w("מאשר", 400.0, 500.0, 430.0),
+        w("חתימה", 120.0, 580.0, 160.0),
+    ];
+    let shapes = Shapes { boxes: vec![[435.0, 500.0, 447.0, 512.0]], rules: vec![[60.0, 598.0, 220.0, 598.5]] };
+    let found = detect(&words, &shapes, &[], &[]);
+    let names: Vec<(&str, &Kind)> = found.iter().map(|c| (c.name.as_str(), &c.kind)).collect();
+    assert_eq!(names, [("שם מלא", &Kind::Text), ("טלפון", &Kind::Text), ("חתימה", &Kind::Text), ("מאשר", &Kind::CheckBox)], "{found:?}");
+    assert!(found[0].rect[0] > found[1].rect[0], "right to left on the row");
+}
+
+/// A table drawn with lines (no rectangles): one text field in each row's empty stretch, named
+/// from the row's label, and none on the table's own lines.
+#[test]
+fn detection_fills_rows_of_a_table_drawn_with_lines() {
+    use crate::detect::*;
+    let w = |t: &str, x0: f64, y0: f64, x1: f64| Word { text: t.into(), rect: [x0, y0, x1, y0 + 12.0] };
+    let words = vec![
+        w("כתובת", 420.0, 308.0, 455.0),
+        w("דואר", 385.0, 308.0, 415.0),
+        w("אלקטרוני", 320.0, 308.0, 380.0),
+        w("Phone", 70.0, 336.0, 100.0),
+        w("Full", 70.0, 364.0, 92.0),
+        w("table", 96.0, 364.0, 120.0),
+        w("header", 124.0, 364.0, 160.0),
+        w("text", 164.0, 364.0, 190.0),
+        w("that", 194.0, 364.0, 220.0),
+        w("fills", 224.0, 364.0, 250.0),
+        w("the", 254.0, 364.0, 270.0),
+        w("row", 274.0, 364.0, 300.0),
+        w("all", 304.0, 364.0, 320.0),
+        w("the", 324.0, 364.0, 340.0),
+        w("way", 344.0, 364.0, 366.0),
+        w("across", 370.0, 364.0, 410.0),
+        w("it", 414.0, 364.0, 430.0),
+        w("here", 434.0, 364.0, 466.0),
+    ];
+    let rules = vec![[60.0, 300.0, 470.0, 300.5], [60.0, 328.0, 470.0, 328.5], [60.0, 356.0, 470.0, 356.5], [60.0, 384.0, 470.0, 384.5]];
+    let found = detect(&words, &Shapes { boxes: vec![], rules }, &[], &[]);
+    let names: Vec<&str> = found.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Phone", "כתובת דואר אלקטרוני"], "{found:?}");
+    for c in &found {
+        assert!(c.rect[1] > 300.0 && c.rect[3] < 356.0, "inside a row, not on the table's top line: {c:?}");
+    }
+    let email = &found[1];
+    assert!(email.rect[2] < 320.0 && email.rect[0] < 70.0, "the row's empty stretch, left of the label: {email:?}");
+}
+
 #[test]
 fn detection_makes_a_row_of_touching_cells_one_comb_field() {
     use crate::detect::*;

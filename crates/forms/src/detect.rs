@@ -261,56 +261,153 @@ fn clean(label: &str) -> String {
     s.chars().take(40).collect::<String>().trim().to_string()
 }
 
-/// The label for a field at `rect`: the words to its left on the same line, else the words
-/// just above it.
-fn label_for(words: &[Word], rect: [f64; 4], right_of: bool) -> String {
+/// Whether `text` runs right to left (Hebrew, Arabic …), from its first letter; `None` without
+/// letters (digits and punctuation take the direction of what is around them).
+fn rtl(text: &str) -> Option<bool> {
+    let c = text.chars().find(|c| c.is_alphabetic())?;
+    Some(matches!(u32::from(c), 0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF | 0x1_0800..=0x1_0FFF | 0x1_E800..=0x1_EFFF))
+}
+
+/// The label beside `rect` on one side (`right`) on the same line: the group of words nearest the
+/// field, up to a gap wider than a few spaces, in the order they were read (the logical order, so
+/// a Hebrew label's words come out as typed), and its distance from the field.
+fn side_label(words: &[Word], rect: [f64; 4], right: bool) -> Option<(String, f64)> {
     let h = (rect[3] - rect[1]).max(8.0);
     let same_line = |w: &Word| (mid(w.rect) - mid(rect)).abs() < h.max(10.0) * 0.7;
-    let mut left: Vec<&Word> = if right_of {
-        words.iter().filter(|w| same_line(w) && w.rect[0] >= rect[2] - 1.0 && w.rect[0] - rect[2] < 200.0).collect()
-    } else {
-        words.iter().filter(|w| same_line(w) && w.rect[2] <= rect[0] + 1.0 && rect[0] - w.rect[2] < 250.0).collect()
+    let gap = |w: &Word| if right { w.rect[0] - rect[2] } else { rect[0] - w.rect[2] };
+    let mut side: Vec<(usize, &Word)> =
+        words.iter().enumerate().filter(|(_, w)| same_line(w) && gap(w) >= -1.0 && gap(w) < 250.0 && !w.text.chars().all(|c| c == '_')).collect();
+    let (_, nearest) = side.iter().min_by(|(_, a), (_, b)| gap(a).total_cmp(&gap(b)))?;
+    let (line, first) = (mid(nearest.rect), gap(nearest));
+    side.retain(|(_, w)| (mid(w.rect) - line).abs() < 3.0);
+    // Outwards from the field: nearest first.
+    side.sort_by(|(_, a), (_, b)| gap(a).total_cmp(&gap(b)));
+    let mut picked: Vec<(usize, &str)> = Vec::new();
+    let mut edge = if right { rect[2] } else { rect[0] };
+    for (index, w) in side {
+        let step = if right { w.rect[0] - edge } else { edge - w.rect[2] };
+        if !picked.is_empty() && step > 24.0 {
+            break;
+        }
+        picked.push((index, w.text.as_str()));
+        edge = if right { w.rect[2] } else { w.rect[0] };
+    }
+    picked.sort_by_key(|(index, _)| *index);
+    let label = clean(&picked.iter().map(|(_, t)| *t).collect::<Vec<_>>().join(" "));
+    (!label.is_empty()).then_some((label, first))
+}
+
+/// A caption printed under a blank line ("Signature", "חתימה"): short, just below the line and
+/// centred on it.
+fn caption_below(words: &[Word], rect: [f64; 4]) -> Option<String> {
+    let line = rect[1] - 1.0;
+    let (x0, x1) = (rect[0], rect[2]);
+    let under: Vec<(usize, &Word)> = words
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| w.rect[3] <= line + 1.0 && line - w.rect[3] < 14.0 && w.rect[0] >= x0 - 4.0 && w.rect[2] <= x1 + 4.0)
+        .collect();
+    let row = under.iter().map(|(_, w)| mid(w.rect)).max_by(f64::total_cmp)?;
+    let mut on: Vec<(usize, &Word)> = under.into_iter().filter(|(_, w)| (mid(w.rect) - row).abs() < 3.0).collect();
+    let (a, b) = on.iter().fold((f64::MAX, f64::MIN), |(a, b), (_, w)| (a.min(w.rect[0]), b.max(w.rect[2])));
+    let centre = (a + b) / 2.0;
+    if on.len() > 4 || (centre - (x0 + x1) / 2.0).abs() > (x1 - x0) * 0.3 {
+        return None;
+    }
+    on.sort_by_key(|(index, _)| *index);
+    let label = clean(&on.iter().map(|(_, w)| w.text.as_str()).collect::<Vec<_>>().join(" "));
+    (!label.is_empty()).then_some(label)
+}
+
+/// The label for a text field at `rect`. On its line, a left-to-right label comes before the
+/// field (to its left) and a right-to-left one before it from the other side (to its right), so
+/// "שם: ____ טלפון: ____" names each blank from the Hebrew label on its right, not from the
+/// next field's label on its left. The nearer of the two wins; a label on the wrong side only
+/// when there is nothing else on the line. Then, for a blank line (`line`), a caption under it,
+/// then the words just above.
+fn label_for(words: &[Word], rect: [f64; 4], line: bool) -> String {
+    let left = side_label(words, rect, false);
+    let right = side_label(words, rect, true);
+    let reads_in = |l: &Option<(String, f64)>, want_rtl: bool| l.clone().filter(|(t, _)| rtl(t).unwrap_or(false) == want_rtl);
+    let found = match (reads_in(&left, false), reads_in(&right, true)) {
+        (Some(l), Some(r)) => Some(if r.1 < l.1 { r } else { l }),
+        (l, r) => l.or(r),
     };
-    left.sort_by(|a, b| a.rect[0].total_cmp(&b.rect[0]));
-    if right_of {
-        // The words that follow the box, up to the next gap wider than a few spaces.
-        let mut picked = Vec::new();
-        let mut x = rect[2];
-        for w in left {
-            if w.rect[0] - x > 24.0 {
-                break;
-            }
-            picked.push(w.text.as_str());
-            x = w.rect[2];
-        }
-        return clean(&picked.join(" "));
+    if let Some((label, _)) = found.or(left) {
+        return label;
     }
-    // The words that end nearest the field, back to a wide gap.
-    let mut picked: Vec<&str> = Vec::new();
-    let mut x = rect[0];
-    for w in left.iter().rev() {
-        if x - w.rect[2] > 24.0 && !picked.is_empty() {
-            break;
-        }
-        if w.text.chars().all(|c| c == '_') {
-            break;
-        }
-        picked.insert(0, w.text.as_str());
-        x = w.rect[0];
-    }
-    let l = clean(&picked.join(" "));
-    if !l.is_empty() {
-        return l;
+    if line && let Some(caption) = caption_below(words, rect) {
+        return caption;
     }
     // Above: the nearest line of words over the field's left part.
     let above: Vec<&Word> = words
         .iter()
         .filter(|w| w.rect[1] >= rect[3] - 1.0 && w.rect[1] - rect[3] < 24.0 && w.rect[0] < rect[2] && w.rect[2] > rect[0] - 4.0)
         .collect();
-    let Some(line) = above.iter().map(|w| mid(w.rect)).min_by(f64::total_cmp) else { return String::new() };
-    let mut on: Vec<&&Word> = above.iter().filter(|w| (mid(w.rect) - line).abs() < 3.0).collect();
+    let Some(row) = above.iter().map(|w| mid(w.rect)).min_by(f64::total_cmp) else { return String::new() };
+    let mut on: Vec<&&Word> = above.iter().filter(|w| (mid(w.rect) - row).abs() < 3.0).collect();
     on.sort_by(|a, b| a.rect[0].total_cmp(&b.rect[0]));
+    if on.iter().any(|w| rtl(&w.text) == Some(true)) {
+        on.reverse();
+    }
     clean(&on.iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" "))
+}
+
+/// The label for a check box at `rect`: the words that follow it on its line, to its right in a
+/// left-to-right form and to its left in a right-to-left one ("☐ מאשר" reads from the right), the
+/// nearer of the two when both are there.
+fn check_box_label(words: &[Word], rect: [f64; 4]) -> String {
+    let right = side_label(words, rect, true);
+    let left = side_label(words, rect, false);
+    let reads_in = |l: &Option<(String, f64)>, want_rtl: bool| l.clone().filter(|(t, _)| rtl(t).unwrap_or(false) == want_rtl);
+    let found = match (reads_in(&right, false), reads_in(&left, true)) {
+        (Some(r), Some(l)) => Some(if l.1 < r.1 { l } else { r }),
+        (r, l) => r.or(l),
+    };
+    found.or(right).map(|(label, _)| label).unwrap_or_default()
+}
+
+/// Rows of a table drawn with lines: two horizontal rules over the same span, 12–60 pt apart
+/// with no other rule between them, as the row's rectangle.
+fn rule_rows(rules: &[[f64; 4]]) -> Vec<[f64; 4]> {
+    let span = |a: &[f64; 4], b: &[f64; 4]| {
+        let (lo, hi) = (a[0].max(b[0]), a[2].min(b[2]));
+        let shorter = (a[2] - a[0]).min(b[2] - b[0]);
+        (shorter >= 40.0 && hi - lo >= shorter * 0.8).then_some((lo, hi))
+    };
+    let mut rows = Vec::new();
+    for low in rules {
+        // The nearest rule above `low` over the same span.
+        let up = rules
+            .iter()
+            .filter(|up| up[1] - low[1] >= 12.0 && up[1] - low[1] <= 60.0 && span(low, up).is_some())
+            .min_by(|a, b| a[1].total_cmp(&b[1]));
+        let Some(up) = up else { continue };
+        let between = rules.iter().any(|r| r[1] > low[1] + 1.0 && r[1] < up[1] - 1.0 && span(low, r).is_some());
+        if let (Some((lo, hi)), false) = (span(low, up), between) {
+            rows.push([lo, low[1], hi, up[1]]);
+        }
+    }
+    rows
+}
+
+/// Where to write in a table row: the widest stretch of the row no words cover, if it is at
+/// least 40 pt wide.
+fn free_in_row(words: &[Word], row: [f64; 4]) -> Option<[f64; 4]> {
+    let mut taken: Vec<(f64, f64)> = words
+        .iter()
+        .filter(|w| mid(w.rect) > row[1] && mid(w.rect) < row[3] && w.rect[2] > row[0] && w.rect[0] < row[2])
+        .map(|w| (w.rect[0] - 4.0, w.rect[2] + 4.0))
+        .collect();
+    taken.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (mut best, mut x) = (None::<(f64, f64)>, row[0]);
+    for (a, b) in taken.into_iter().chain(std::iter::once((row[2], row[2]))) {
+        if a - x >= 40.0 && best.is_none_or(|(p, q)| a - x > q - p) {
+            best = Some((x, a));
+        }
+        x = x.max(b);
+    }
+    best.map(|(a, b)| [a + 2.0, row[1] + 1.0, b - 2.0, row[3] - 1.0])
 }
 
 /// Rows of two or more touching cells of one size, as (the row's rect, cell count). Two is
@@ -366,7 +463,7 @@ pub fn detect(words: &[Word], shapes: &Shapes, existing: &[[f64; 4]], taken: &[S
     for b in blanks {
         let h = (b.rect[3] - b.rect[1]).max(10.0);
         let rect = [b.rect[0], b.rect[1], b.rect[2], b.rect[1] + (h * 1.4).clamp(12.0, 22.0)];
-        let l = label_for(&labels, rect, false);
+        let l = label_for(&labels, rect, true);
         push(Kind::Text, rect, l, &mut out);
     }
     // Comb boxes (postcodes, dates, IBANs): one text field per row of cells, found before
@@ -382,7 +479,7 @@ pub fn detect(words: &[Word], shapes: &Shapes, existing: &[[f64; 4]], taken: &[S
     for r in &shapes.boxes {
         let (w, h) = (r[2] - r[0], r[3] - r[1]);
         if (5.0..=20.0).contains(&w) && (5.0..=20.0).contains(&h) && (w / h - 1.0).abs() < 0.25 {
-            let l = label_for(&labels, *r, true);
+            let l = check_box_label(&labels, *r);
             push(Kind::CheckBox, *r, l, &mut out);
         }
     }
@@ -396,8 +493,18 @@ pub fn detect(words: &[Word], shapes: &Shapes, existing: &[[f64; 4]], taken: &[S
             push(Kind::Text, inner, l, &mut out);
         }
     }
+    // Tables drawn with lines: a text field in each row's empty stretch, named from the row's
+    // label. Their lines are rows' edges, not blanks to write on.
+    let rows = rule_rows(&shapes.rules);
+    for row in &rows {
+        if let Some(rect) = free_in_row(&labels, *row) {
+            let l = label_for(&labels, rect, false);
+            push(Kind::Text, rect, l, &mut out);
+        }
+    }
+    let edge = |r: &[f64; 4]| rows.iter().any(|row| (row[1] - r[1]).abs() < 0.5 || (row[3] - r[1]).abs() < 0.5) && r[2] - r[0] >= 40.0;
     // Rules: a text field sitting on the line.
-    for r in &shapes.rules {
+    for r in shapes.rules.iter().filter(|r| !edge(r)) {
         let w = r[2] - r[0];
         if w < 40.0 {
             continue;
@@ -407,10 +514,17 @@ pub fn detect(words: &[Word], shapes: &Shapes, existing: &[[f64; 4]], taken: &[S
         if labels.iter().any(|x| overlaps(x.rect, rect)) {
             continue;
         }
-        let l = label_for(&labels, rect, false);
+        let l = label_for(&labels, rect, true);
         push(Kind::Text, rect, l, &mut out);
     }
-    // Reading order: top to bottom, left to right.
+    // Reading order: top to bottom, and left to right, or right to left on a page whose labels
+    // are mostly right to left.
+    let (rtl_words, ltr_words) = labels.iter().fold((0usize, 0usize), |(r, l), w| match rtl(&w.text) {
+        Some(true) => (r + 1, l),
+        Some(false) => (r, l + 1),
+        None => (r, l),
+    });
+    let rtl_page = rtl_words > ltr_words;
     // Rows: fields whose middles are within 8 pt of the row's first.
     out.sort_by(|a, b| mid(b.rect).total_cmp(&mid(a.rect)));
     let mut rows = Vec::with_capacity(out.len());
@@ -423,7 +537,10 @@ pub fn detect(words: &[Word], shapes: &Shapes, existing: &[[f64; 4]], taken: &[S
         rows.push(row);
     }
     let mut keyed: Vec<(usize, Candidate)> = rows.into_iter().zip(out).collect();
-    keyed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.rect[0].total_cmp(&b.1.rect[0])));
+    keyed.sort_by(|a, b| {
+        let across = if rtl_page { b.1.rect[2].total_cmp(&a.1.rect[2]) } else { a.1.rect[0].total_cmp(&b.1.rect[0]) };
+        a.0.cmp(&b.0).then(across)
+    });
     let mut out: Vec<Candidate> = keyed.into_iter().map(|(_, c)| c).collect();
     // Unique names (Acrobat numbers repeats); unlabelled fields get Text1, Check Box1, …
     let mut used: Vec<String> = taken.to_vec();
