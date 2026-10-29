@@ -355,7 +355,70 @@ pub fn set_rect(doc: &mut Document, page: usize, index: usize, rect: [f64; 4], m
     if !matches!(subtype.as_str(), "Square" | "Circle" | "FreeText") {
         return Err(AnnotError::Invalid(format!("{subtype} comments can't be resized")));
     }
+    if let Some((size, fitted)) = scaled_typed_text(doc, &d, normalize(rect)) {
+        refuse_foreign_text(doc, &d)?;
+        let before = d;
+        doc.update_dict(r, |d| {
+            set_da_size(d, size);
+            rich_text(d);
+            touch(d, meta);
+        })?;
+        let result = apply_text_box(doc, r, fitted, meta, false);
+        if result.is_err() {
+            doc.set(r, Object::Dict(before));
+        }
+        return result;
+    }
     apply_text_box(doc, r, rect, meta, false)
+}
+
+/// The smallest and largest font size resizing Fill & Sign text scales to: the Fill & Sign tool's
+/// own range for typed text.
+const TYPED_TEXT_SIZES: std::ops::RangeInclusive<f64> = 4.0..=300.0;
+
+/// Fill & Sign text resized by a corner, which keeps its proportions: the font size it scales to
+/// and the box that holds the text at that size, so the words grow and shrink with the box instead
+/// of re-wrapping in it. The box keeps the corner the drag didn't move, and is widened when the
+/// text needs it (the padding round the text doesn't scale). `None` for other comments, and for
+/// a side handle, which changes the box's width or height alone and keeps the size.
+fn scaled_typed_text(doc: &Document, d: &Dict, new: [f64; 4]) -> Option<(f64, [f64; 4])> {
+    let typed = d.name(b"IT") == Some(b"FreeTextTypeWriter") || matches!(d.get(b"PCFillSign"), Some(Object::Bool(true)));
+    if d.name(b"Subtype") != Some(b"FreeText") || !typed || d.contains(b"CL") {
+        return None;
+    }
+    let old: Vec<f64> = d.get(b"Rect")?.as_array()?.iter().filter_map(|o| o.as_f64()).collect();
+    let old = normalize(four(&old)?);
+    let (ow, oh, nw, nh) = (old[2] - old[0], old[3] - old[1], new[2] - new[0], new[3] - new[1]);
+    if !(ow > 0.0 && oh > 0.0 && nw > 0.0 && nh > 0.0) || !finite(&new) {
+        return None;
+    }
+    let (sx, sy) = (nw / ow, nh / oh);
+    // Both sides scaled alike (a corner), and by more than a slip of the pointer.
+    if (sx - sy).abs() > 0.02 * sx.max(sy) || (sy - 1.0).abs() < 0.01 {
+        return None;
+    }
+    let (_, size) = appearance::parse_da(d);
+    let size = (size * sy).clamp(*TYPED_TEXT_SIZES.start(), *TYPED_TEXT_SIZES.end());
+    let text = text_value(doc, d, b"Contents").unwrap_or_default();
+    // Turned text (`/PCTextRotate` 90 or 270) runs along the box's height.
+    let turned = matches!(d.get(b"PCTextRotate").and_then(Object::as_int).map(|t| t.rem_euclid(360)), Some(90 | 270));
+    let (along, across) = if turned { (nh, nw) } else { (nw, nh) };
+    let pad = 2.0 + border_width_of(d);
+    let longest = text.lines().map(|l| appearance::text_width(l, size)).fold(0.0, f64::max);
+    let along = along.max(longest + 2.0 * pad + 4.0);
+    let lines = appearance::wrap(&text, size, (along - 2.0 * pad).max(1.0)).len().max(1) as f64;
+    let across = across.max(lines * size * 1.2 + 2.0 * pad + 2.0);
+    let (w, h) = if turned { (across, along) } else { (along, across) };
+    // Keep whichever side of the box the drag left where it was.
+    let x0 = if (new[0] - old[0]).abs() <= (new[2] - old[2]).abs() { new[0] } else { new[2] - w };
+    let y1 = if (new[3] - old[3]).abs() <= (new[1] - old[1]).abs() { new[3] } else { new[1] + h };
+    Some((size, [x0, y1 - h, x0 + w, y1]))
+}
+
+/// `/DA` with `size` as its font size, keeping its colour.
+fn set_da_size(d: &mut Dict, size: f64) {
+    let (col, _) = appearance::parse_da(d);
+    d.set(b"DA".to_vec(), PdfString::literal(format!("{} {} {} rg /Helv {} Tf", n(col[0]), n(col[1]), n(col[2]), n(size)).into_bytes()));
 }
 
 /// At most this many points reshape a comment (a drawn polygon has a handful).
@@ -579,8 +642,7 @@ pub fn set_font_size(doc: &mut Document, page: usize, index: usize, size: f64, m
     refuse_foreign_text(doc, &d)?;
     let before = d;
     doc.update_dict(r, |d| {
-        let (col, _) = appearance::parse_da(d);
-        d.set(b"DA".to_vec(), PdfString::literal(format!("{} {} {} rg /Helv {} Tf", n(col[0]), n(col[1]), n(col[2]), n(size)).into_bytes()));
+        set_da_size(d, size);
         rich_text(d);
         touch(d, meta);
     })?;

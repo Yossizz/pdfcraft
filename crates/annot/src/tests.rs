@@ -1501,6 +1501,55 @@ fn a_comment_listed_many_times_is_drawn_once_for_display() {
     assert_eq!((cache.builds(), cache.hits()), (1, 1), "a refresh reuses the cached stream once");
 }
 
+/// Fill & Sign text resized by a corner scales its font with the box, keeps the corner the drag
+/// didn't move and stays on one line; a side handle or another kind of text box keeps its size.
+#[test]
+fn fill_sign_text_scales_with_a_corner_resize() {
+    let mut doc = fixture();
+    let typed = Shape::Typewriter { rect: [100.0, 700.0, 200.0, 716.0], font_size: 10.0 };
+    let t = add_annotation(&mut doc, &new(0, typed), &meta("t")).unwrap();
+    set_contents(&mut doc, 0, t, "Ada Lovelace", &meta("")).unwrap();
+    let rect = |doc: &Document| -> [f64; 4] {
+        let v: Vec<f64> = list(doc, 0)[t].get(b"Rect").unwrap().as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect();
+        [v[0], v[1], v[2], v[3]]
+    };
+    let size = |doc: &Document| props(doc, 0, t).unwrap().font_size.unwrap();
+    // The words fit the box's width on one line (inside the padding, 2 pt plus the border).
+    let one_line = |doc: &Document| {
+        let (r, s) = (rect(doc), size(doc));
+        crate::appearance::wrap("Ada Lovelace", s, r[2] - r[0] - 2.0 * 3.0).len() == 1
+    };
+    let r0 = rect(&doc);
+    // The bottom-right corner, dragged to twice the size: the top-left stays.
+    let grown = [r0[0], r0[3] - 2.0 * (r0[3] - r0[1]), r0[0] + 2.0 * (r0[2] - r0[0]), r0[3]];
+    set_rect(&mut doc, 0, t, grown, &meta("")).unwrap();
+    let doc = reopen(&doc);
+    assert!((size(&doc) - 20.0).abs() < 1e-6, "{}", size(&doc));
+    assert_eq!([rect(&doc)[0], rect(&doc)[3]], [r0[0], r0[3]], "the top-left corner stays");
+    assert!(one_line(&doc), "{:?}", rect(&doc));
+    assert!(text(&list(&doc, 0)[t], b"RC").contains("font-size:20pt"));
+    // The top-left corner, dragged to a third: the bottom-right stays, the text stays on one line.
+    let mut doc = doc;
+    let r1 = rect(&doc);
+    let shrunk = [r1[2] - (r1[2] - r1[0]) / 3.0, r1[1], r1[2], r1[1] + (r1[3] - r1[1]) / 3.0];
+    set_rect(&mut doc, 0, t, shrunk, &meta("")).unwrap();
+    assert!((size(&doc) - 20.0 / 3.0).abs() < 1e-3, "{}", size(&doc));
+    assert_eq!([rect(&doc)[2], rect(&doc)[1]], [r1[2], r1[1]], "the bottom-right corner stays");
+    assert!(one_line(&doc), "the padding doesn't scale, so the box widens rather than wrap: {:?}", rect(&doc));
+    // A side handle changes the width alone and keeps the size.
+    let r2 = rect(&doc);
+    set_rect(&mut doc, 0, t, [r2[0], r2[1], r2[2] + 40.0, r2[3]], &meta("")).unwrap();
+    assert!((size(&doc) - 20.0 / 3.0).abs() < 1e-3);
+    // Never below the Fill & Sign tool's smallest size.
+    let r3 = rect(&doc);
+    set_rect(&mut doc, 0, t, [r3[0], r3[3] - (r3[3] - r3[1]) / 10.0, r3[0] + (r3[2] - r3[0]) / 10.0, r3[3]], &meta("")).unwrap();
+    assert_eq!(size(&doc), 4.0);
+    // A text box comment keeps its size when resized by a corner.
+    let b = add_annotation(&mut doc, &new(0, Shape::TextBox { rect: [100.0, 600.0, 200.0, 620.0], font_size: 12.0 }), &meta("t")).unwrap();
+    set_rect(&mut doc, 0, b, [100.0, 580.0, 300.0, 620.0], &meta("")).unwrap();
+    assert_eq!(props(&doc, 0, b).unwrap().font_size, Some(12.0));
+}
+
 /// #1908: a text box's font size changes in `/DA` (colour kept), the rich text follows, the box
 /// grows to hold the bigger text but never shrinks, and bad sizes and other subtypes are refused.
 #[test]

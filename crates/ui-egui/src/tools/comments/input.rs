@@ -207,10 +207,11 @@ fn select_input(
             // On screen, the image is also turned by the view's rotation.
             let turned = !cx.xf.rot.is_multiple_of(180);
             let aspect_ratio = view.signature_drag.aspect_ratio(cx.page, a.index).map(|ratio| if turned { ratio.recip() } else { ratio });
-            // A drawn signature keeps its shape from the corners, as image signatures do.
+            // A drawn signature keeps its shape from the corners, as image signatures do, and so
+            // does Fill & Sign text, whose font scales with the box (`pdfcraft_annot::set_rect`).
             let aspect_ratio = aspect_ratio.or_else(|| {
                 let r = cx.screen_rect(a);
-                (a.fill_sign && a.subtype == "Ink" && r.height() > 0.0).then(|| r.width() / r.height())
+                (a.fill_sign && matches!(a.subtype.as_str(), "Ink" | "FreeText") && r.height() > 0.0).then(|| r.width() / r.height())
             });
             cv.gesture = Some(Gesture::Resize { page: cx.page, index: a.index, handle: h, from: o, aspect_ratio });
             consumed = true;

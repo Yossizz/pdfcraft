@@ -3703,8 +3703,8 @@ milestone = "M5"
 status = "shipped"
 commands = ["sign.fill.text"]
 tools = ["fill_sign_add"]
-evidence = ["crates/annot/src/tests.rs::fill_and_sign_items_are_drawn", "crates/ui-egui/tests/it/fill_sign.rs::text_marks_and_date", "crates/ui-egui/tests/it/fill_sign.rs::fill_text_size_controls_new_text_and_survives_settings_restore", "crates/automation/tests/it/automation.rs::fill_sign_text_font_size_is_saved_and_validated"]
-notes = "Fill & Sign text and dates have a 4–300 pt size control in the active toolbar; new items use the chosen size, which persists across launches. fill_sign_add accepts font_size for text and dates."
+evidence = ["crates/annot/src/tests.rs::fill_and_sign_items_are_drawn", "crates/ui-egui/tests/it/fill_sign.rs::text_marks_and_date", "crates/ui-egui/tests/it/fill_sign.rs::fill_text_size_controls_new_text_and_survives_settings_restore", "crates/automation/tests/it/automation.rs::fill_sign_text_font_size_is_saved_and_validated", "crates/annot/src/tests.rs::fill_sign_text_scales_with_a_corner_resize", "crates/automation/tests/it/automation.rs::fill_sign_text_resized_by_a_corner_scales_its_font"]
+notes = "Fill & Sign text and dates have a 4–300 pt size control in the active toolbar; new items use the chosen size, which persists across launches. fill_sign_add accepts font_size for text and dates. Dragging a corner of placed Fill & Sign text scales it, font included (within 4–300 pt); a side handle changes the width or height alone."
 
 [[feature]]
 id = "comment.text-box"

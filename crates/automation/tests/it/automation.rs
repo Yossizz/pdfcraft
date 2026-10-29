@@ -3667,6 +3667,38 @@ fn fill_sign_text_font_size_is_saved_and_validated() {
     ));
 }
 
+/// Fill & Sign text resized by a corner (the box scaled alike both ways), as the selection
+/// handles do, scales its font with it; one undo puts it back.
+#[test]
+fn fill_sign_text_resized_by_a_corner_scales_its_font() {
+    let dir = workdir("fill-sign-text-resize");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({ "path": "a.pdf" }))["doc"].as_u64().unwrap();
+    ok(&mut a, "fill_sign_add", json!({ "doc": doc, "page": 1, "type": "text", "at": [20, 40], "text": "Ada Lovelace", "font_size": 12 }));
+    let rect = |a: &mut Automation| -> Vec<f64> {
+        let comments = ok(a, "comment_list", json!({ "doc": doc }));
+        comments["comments"][0]["rect"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect()
+    };
+    let r = rect(&mut a);
+    let doubled = [r[0], r[1], r[0] + 2.0 * (r[2] - r[0]), r[1] + 2.0 * (r[3] - r[1])];
+    ok(&mut a, "comment_edit", json!({ "doc": doc, "page": 1, "index": 1, "rect": doubled }));
+    let saved_size = |a: &mut Automation, name: &str| {
+        ok(a, "doc_save", json!({ "doc": doc, "path": name }));
+        let saved = std::fs::read(dir.join(name)).unwrap();
+        let pdf = pdfcraft_cos::Document::open(std::sync::Arc::new(saved)).unwrap();
+        let page = pdfcraft_model::pages(&pdf).remove(0);
+        let annotations = pdf.resolve(page.dict.get(b"Annots").unwrap());
+        let annotation = pdf.resolve(annotations.as_array().unwrap().first().unwrap());
+        String::from_utf8_lossy(&annotation.as_dict().unwrap().get(b"DA").unwrap().as_string().unwrap().bytes).into_owned()
+    };
+    let da = saved_size(&mut a, "resized.pdf");
+    assert!(da.contains("/Helv 24 Tf"), "the font doubles with the box: {da}");
+    let after = rect(&mut a);
+    assert_eq!([after[0], after[1]], [r[0], r[1]], "the corner the drag didn't move stays");
+    assert_eq!(ok(&mut a, "edit_undo", json!({ "doc": doc }))["undone"], "Resize comment");
+    assert!(saved_size(&mut a, "undone.pdf").contains("/Helv 12 Tf"));
+}
+
 #[test]
 fn image_signatures_through_tools_preserve_transparency_and_survive_save() {
     let dir = workdir("image-signatures");
